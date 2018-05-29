@@ -37,7 +37,7 @@ env:
 
 install:
   - git clone https://github.com/jeking3/boost-ci.git boost-ci
-  - cp -pr boost-ci/ci .
+  - cp -pr boost-ci/ci boost-ci/.codecov.yml .
   - source ci/travis/install.sh
 
 addons:
