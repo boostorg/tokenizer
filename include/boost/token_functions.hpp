@@ -40,6 +40,7 @@
 #include <boost/assert.hpp>
 #include <boost/type_traits/is_pointer.hpp>
 #include <boost/detail/workaround.hpp>
+#include <boost/move/utility_core.hpp>
 #include <boost/mpl/if.hpp>
 #include <boost/throw_exception.hpp>
 #if !defined(BOOST_NO_CWCTYPE)
@@ -88,7 +89,8 @@ namespace boost{
   // character (backslash \), can be assigned to other characters.
 
   struct escaped_list_error : public std::runtime_error{
-    escaped_list_error(const std::string& what_arg):std::runtime_error(what_arg) { }
+    explicit escaped_list_error(const char* what_arg) BOOST_NOEXCEPT_OR_NOTHROW
+      : std::runtime_error(what_arg) { }
   };
 
 
@@ -127,7 +129,7 @@ namespace boost{
     template <typename iterator, typename Token>
     void do_escape(iterator& next,iterator end,Token& tok) {
       if (++next == end)
-        BOOST_THROW_EXCEPTION(escaped_list_error(std::string("cannot end with escape")));
+        BOOST_THROW_EXCEPTION(escaped_list_error("cannot end with escape"));
       if (Traits::eq(*next,'n')) {
         tok+='\n';
         return;
@@ -145,7 +147,7 @@ namespace boost{
         return;
       }
       else
-        BOOST_THROW_EXCEPTION(escaped_list_error(std::string("unknown escape sequence")));
+        BOOST_THROW_EXCEPTION(escaped_list_error("unknown escape sequence"));
     }
 
     public:
@@ -155,7 +157,7 @@ namespace boost{
       : escape_(1,e), c_(1,c), quote_(1,q), last_(false) { }
 
     escaped_list_separator(string_type e, string_type c, string_type q)
-      : escape_(e), c_(c), quote_(q), last_(false) { }
+      : escape_(boost::move(e)), c_(boost::move(c)), quote_(boost::move(q)), last_(false) { }
 
     void reset() {last_=false;}
 
@@ -216,11 +218,11 @@ namespace boost{
   template<typename traits, int N>
   struct traits_extension_details : public traits {
     typedef typename traits::char_type char_type;
-    static bool isspace(char_type c)
+    static bool isspace(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
     {
        return std::iswspace(c) != 0;
     }
-    static bool ispunct(char_type c)
+    static bool ispunct(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
     {
        return std::iswpunct(c) != 0;
     }
@@ -229,11 +231,11 @@ namespace boost{
   template<typename traits>
   struct traits_extension_details<traits, 1> : public traits {
     typedef typename traits::char_type char_type;
-    static bool isspace(char_type c)
+    static bool isspace(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
     {
        return std::isspace(c) != 0;
     }
-    static bool ispunct(char_type c)
+    static bool ispunct(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
     {
        return std::ispunct(c) != 0;
     }
@@ -246,7 +248,7 @@ namespace boost{
   template<typename traits>
   struct traits_extension : public traits {
     typedef typename traits::char_type char_type;
-    static bool isspace(char_type c)
+    static bool isspace(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
     {
 #if !defined(BOOST_NO_CWCTYPE)
       return traits_extension_details<traits, sizeof(char_type)>::isspace(c);
@@ -255,7 +257,7 @@ namespace boost{
 #endif
     }
 
-    static bool ispunct(char_type c)
+    static bool ispunct(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
     {
 #if !defined(BOOST_NO_CWCTYPE)
       return traits_extension_details<traits, sizeof(char_type)>::ispunct(c);
@@ -284,19 +286,19 @@ namespace boost{
     }
 
     template<class Token, class Value>
-    static void plus_equal(Token &, const Value &) { }
+    static void plus_equal(Token &, const Value &) BOOST_NOEXCEPT_OR_NOTHROW { }
 
     // If we are doing an assign, there is no need for the
     // the clear.
     //
     template<class Token>
-    static void clear(Token &) { }
+    static void clear(Token &) BOOST_NOEXCEPT_OR_NOTHROW { }
   };
 
   template <>
   struct assign_or_plus_equal<std::input_iterator_tag> {
     template<class Iterator, class Token>
-    static void assign(Iterator , Iterator , Token &) { }
+    static void assign(Iterator , Iterator , Token &) BOOST_NOEXCEPT_OR_NOTHROW { }
     template<class Token, class Value>
     static void plus_equal(Token &t, const Value &v) {
       t += v;
@@ -357,7 +359,7 @@ namespace boost{
         return_partial_last_(return_partial_last) { }
 
     offset_separator()
-      : offsets_(1,1), current_offset_(),
+      : offsets_(1,1), current_offset_(0),
         wrap_offsets_(true), return_partial_last_(true) { }
 
     void reset() {
@@ -435,16 +437,13 @@ namespace boost{
     char_separator(const Char* dropped_delims,
                    const Char* kept_delims = 0,
                    empty_token_policy empty_tokens = drop_empty_tokens)
-      : m_dropped_delims(dropped_delims),
+      : m_kept_delims(kept_delims, (kept_delims ? Traits::length(kept_delims) : 0)),
+        m_dropped_delims(dropped_delims),
         m_use_ispunct(false),
         m_use_isspace(false),
         m_empty_tokens(empty_tokens),
         m_output_done(false)
-    {
-      // Borland workaround
-      if (kept_delims)
-        m_kept_delims = kept_delims;
-    }
+    { }
 
                 // use ispunct() for kept delimiters and isspace for dropped.
     explicit
@@ -536,7 +535,7 @@ namespace boost{
     empty_token_policy m_empty_tokens;
     bool m_output_done;
 
-    bool is_kept(Char E) const
+    bool is_kept(Char E) const BOOST_NOEXCEPT_OR_NOTHROW
     {
       if (m_kept_delims.length())
         return m_kept_delims.find(E) != string_type::npos;
@@ -545,7 +544,7 @@ namespace boost{
       } else
         return false;
     }
-    bool is_dropped(Char E) const
+    bool is_dropped(Char E) const BOOST_NOEXCEPT_OR_NOTHROW
     {
       if (m_dropped_delims.length())
         return m_dropped_delims.find(E) != string_type::npos;
@@ -609,8 +608,8 @@ namespace boost{
     explicit char_delimiters_separator(bool return_delims = false,
                                        const Char* returnable = 0,
                                        const Char* nonreturnable = 0)
-      : returnable_(returnable ? returnable : string_type().c_str()),
-        nonreturnable_(nonreturnable ? nonreturnable:string_type().c_str()),
+      : returnable_(returnable, (returnable ? Traits::length(returnable) : 0)),
+        nonreturnable_(nonreturnable, (returnable ? Traits::length(nonreturnable) : 0)),
         return_delims_(return_delims), no_ispunct_(returnable!=0),
         no_isspace_(nonreturnable!=0) { }
 
@@ -633,7 +632,7 @@ namespace boost{
 
      // if we are to return delims and we are one a returnable one
      // move past it and stop
-     if (is_ret(*next) && return_delims_) {
+     if (is_ret(*next)) {
        tok+=*next;
        ++next;
      }
