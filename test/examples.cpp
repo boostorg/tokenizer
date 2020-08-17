@@ -13,7 +13,6 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
-#include <algorithm>
 
 #if defined(BOOST_ENABLE_ASSERT_HANDLER)
 # error "already defined BOOST_ENABLE_ASSERT_HANDLER somewhere"
@@ -21,11 +20,12 @@
 # define BOOST_ENABLE_ASSERT_HANDLER
 #endif
 
-#include <boost/tokenizer.hpp>
 #include <boost/array.hpp>
 #include <boost/range/algorithm/equal.hpp>
 #include <boost/range/begin.hpp>
 #include <boost/range/end.hpp>
+#include <boost/tokenizer.hpp>
+#include <boost/utility/string_view.hpp>
 
 #include <boost/test/minimal.hpp>
 
@@ -68,13 +68,6 @@ int test_main( int /*argc*/, char* /*argv*/[] )
     char_separator<char> sep("-;", "|", boost::keep_empty_tokens);
     Tok t(test_string, sep);
     BOOST_REQUIRE(std::equal(t.begin(), t.end(), answer));
-  }
-  {
-    const std::string test_string = "This,,is, a.test..";
-    std::string answer[] = {"This","is","a","test"};
-    typedef tokenizer<> Tok;
-    Tok t(test_string);
-    BOOST_REQUIRE(std::equal(t.begin(),t.end(),answer));
   }
 
   {
@@ -255,11 +248,34 @@ int test_main( int /*argc*/, char* /*argv*/[] )
 
   // Test default constructed offset_separator
   {
-    const std::string test_string = "1234567";
-    const std::string answer[] = {"1", "2", "3", "4", "5", "6", "7"};
-    typedef offset_separator separator_type;
-    tokenizer<separator_type> tokenizer(test_string);
-    BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    // use std::string content
+    { 
+      typedef std::string string_type;
+      const string_type test_string = "1234567";
+      const string_type answer[] = {"1", "2", "3", "4", "5", "6", "7"};
+      tokenizer<offset_separator, string_type::const_iterator, string_type> tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+
+    // use boost::string_view content
+    { 
+      typedef boost::string_view string_type;
+      const string_type test_string = "1234567";
+      const string_type answer[] = {"1", "2", "3", "4", "5", "6", "7"};
+      tokenizer<offset_separator, string_type::const_iterator, string_type> tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+
+  #if !defined(BOOST_NO_CXX17_HDR_STRING_VIEW)
+    // use std::string_view content
+    { 
+      typedef std::string_view string_type;
+      const string_type test_string = "1234567";
+      const string_type answer[] = {"1", "2", "3", "4", "5", "6", "7"};
+      tokenizer<offset_separator, string_type::const_iterator, string_type> tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+  #endif
   }
 
   // Test non-default constructed offset_separator
@@ -328,14 +344,51 @@ int test_main( int /*argc*/, char* /*argv*/[] )
 
   // Test default constructed char_separator
   {
-    const std::string test_string = ";Hello|world-";
-    const std::string answer[] = {";", "Hello", "|", "world", "-"};
-    tokenizer<char_separator<char> > tokenizer(test_string);
-    BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    // use std::string content
+    {
+      typedef std::string string_type;
+      typedef tokenizer<
+        char_separator<string_type::value_type>,
+        string_type::const_iterator,
+        string_type
+      > tokenizer_type;
+      const string_type test_string = ";Hello|world-";
+      const string_type answer[] = {";", "Hello", "|", "world", "-"};
+      tokenizer_type tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+
+    // use boost::string_view content
+    {
+      typedef boost::string_view string_type;
+      typedef tokenizer<
+        char_separator<string_type::value_type>,
+        string_type::const_iterator,
+        string_type
+      > tokenizer_type;
+      const string_type test_string = ";Hello|world-";
+      const string_type answer[] = {";", "Hello", "|", "world", "-"};
+      tokenizer_type tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+
+  #if !defined(BOOST_NO_CXX17_HDR_STRING_VIEW)
+    // use std::string_view content
+    {
+      typedef std::string_view string_type;
+      typedef tokenizer<
+        char_separator<string_type::value_type>,
+        string_type::const_iterator,
+        string_type
+      > tokenizer_type;
+      const string_type test_string = ";Hello|world-";
+      const string_type answer[] = {";", "Hello", "|", "world", "-"};
+      tokenizer_type tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+  #endif
   }
 
-  std::vector<int> a;
-  a.assign(10, 1);
   // Test non-default contstructed char_separator
   {
     const std::string test_string = ";Hello||world-";
@@ -384,6 +437,53 @@ int test_main( int /*argc*/, char* /*argv*/[] )
       tokenizer<separator_type> tokenizer(test_string, separator);
       BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
     }
+  }
+
+  // Test default constructed char_delimiters_separator  
+  {
+    // use std::string content
+    {
+      typedef std::string string_type;
+      typedef tokenizer<
+        char_delimiters_separator<string_type::value_type>,
+        string_type::const_iterator,
+        string_type
+      > tokenizer_type;
+      const string_type test_string = "This,,is, a.test..";
+      const string_type answer[] = {"This","is","a","test"};
+      tokenizer_type tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+
+    // use boost::string_view content
+    {
+      typedef boost::string_view string_type;
+      typedef tokenizer<
+        char_delimiters_separator<string_type::value_type>,
+        string_type::const_iterator,
+        string_type
+      > tokenizer_type;
+      const string_type test_string = "This,,is, a.test..";
+      const string_type answer[] = {"This","is","a","test"};
+      tokenizer_type tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+
+  #if !defined(BOOST_NO_CXX17_HDR_STRING_VIEW)
+    // use std::string_view content
+    {
+      typedef std::string_view string_type;
+      typedef tokenizer<
+        char_delimiters_separator<string_type::value_type>,
+        string_type::const_iterator,
+        string_type
+      > tokenizer_type;
+      const string_type test_string = "This,,is, a.test..";
+      const string_type answer[] = {"This","is","a","test"};
+      tokenizer_type tokenizer(test_string);
+      BOOST_REQUIRE(boost::range::equal(tokenizer, answer));
+    }
+  #endif
   }
 
   // Test non-default constructed char_delimiters_separator

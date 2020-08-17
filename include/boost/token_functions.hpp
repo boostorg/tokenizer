@@ -31,20 +31,37 @@
 #ifndef BOOST_TOKEN_FUNCTIONS_JRB120303_HPP_
 #define BOOST_TOKEN_FUNCTIONS_JRB120303_HPP_
 
-#include <vector>
-#include <stdexcept>
-#include <string>
-#include <cctype>
-#include <algorithm> // for find_if
 #include <boost/config.hpp>
 #include <boost/assert.hpp>
-#include <boost/type_traits/is_pointer.hpp>
+#include <boost/core/addressof.hpp>
 #include <boost/detail/workaround.hpp>
 #include <boost/move/utility_core.hpp>
 #include <boost/mpl/if.hpp>
+#include <boost/range/distance.hpp>
 #include <boost/throw_exception.hpp>
+#include <boost/utility/string_view.hpp>
+
+#include <cctype>
+#include <iterator>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#if !defined(BOOST_NO_CXX11_NOEXCEPT)
+# define BOOST_TOKENIZER_NOEXCEPT BOOST_NOEXCEPT
+# define BOOST_TOKENIZER_NOEXCEPT_EXPR(expr) BOOST_NOEXCEPT_EXPR(expr)
+#else
+# define BOOST_TOKENIZER_NOEXCEPT BOOST_NOEXCEPT_OR_NOTHROW
+# define BOOST_TOKENIZER_NOEXCEPT_EXPR(expr) BOOST_NOEXCEPT_OR_NOTHROW
+#endif
+
 #if !defined(BOOST_NO_CWCTYPE)
-#include <cwctype>
+# include <cwctype>
+#endif
+
+#if !defined(BOOST_NO_CXX17_HDR_STRING_VIEW)
+# include <string_view> 
 #endif
 
 //
@@ -89,61 +106,155 @@ namespace boost{
   // character (backslash \), can be assigned to other characters.
 
   struct escaped_list_error : public std::runtime_error{
-    explicit escaped_list_error(const char* what_arg) BOOST_NOEXCEPT_OR_NOTHROW
+    explicit escaped_list_error(const char* what_arg) BOOST_TOKENIZER_NOEXCEPT
       : std::runtime_error(what_arg) { }
   };
 
+  namespace tokenizer_detail {
+  //===========================================================================
+  // Tokenizer was broken for wide character separators, at least on Windows, since
+  // CRT functions isspace etc only expect values in [0, 0xFF]. Debug build asserts
+  // if higher values are passed in. The traits extension class should take care of this.
+  // Assuming that the conditional will always get optimized out in the function
+  // implementations, argument types are not a problem since both forms of character classifiers
+  // expect an int.
 
-// The out of the box GCC 2.95 on cygwin does not have a char_traits class.
-// MSVC does not like the following typename
+#if !defined(BOOST_NO_CWCTYPE)
+  template<typename traits, int N>
+  struct traits_extension_details : public traits {
+    typedef typename traits::char_type char_type;
+    static bool isspace(char_type c) BOOST_TOKENIZER_NOEXCEPT
+    {
+       return std::iswspace(c) != 0;
+    }
+    static bool ispunct(char_type c) BOOST_TOKENIZER_NOEXCEPT
+    {
+       return std::iswpunct(c) != 0;
+    }
+  };
+
+  template<typename traits>
+  struct traits_extension_details<traits, 1> : public traits {
+    typedef typename traits::char_type char_type;
+    static bool isspace(char_type c) BOOST_TOKENIZER_NOEXCEPT
+    {
+       return std::isspace(c) != 0;
+    }
+    static bool ispunct(char_type c) BOOST_TOKENIZER_NOEXCEPT
+    {
+       return std::ispunct(c) != 0;
+    }
+  };
+#endif
+
+  // In case there is no cwctype header, we implement the checks manually.
+  // We make use of the fact that the tested categories should fit in ASCII.
+  template<typename traits>
+  struct traits_extension : public traits {
+    typedef typename traits::char_type char_type;
+    static bool isspace(char_type c) BOOST_TOKENIZER_NOEXCEPT
+    {
+#if !defined(BOOST_NO_CWCTYPE)
+      return traits_extension_details<traits, sizeof(char_type)>::isspace(c);
+#else
+      return static_cast< unsigned >(c) <= 255 && std::isspace(c) != 0;
+#endif
+    }
+
+    static bool ispunct(char_type c) BOOST_TOKENIZER_NOEXCEPT
+    {
+#if !defined(BOOST_NO_CWCTYPE)
+      return traits_extension_details<traits, sizeof(char_type)>::ispunct(c);
+#else
+      return static_cast< unsigned >(c) <= 255 && std::ispunct(c) != 0;
+#endif
+    }
+  };
+
+  template <typename CharT, typename Traits, typename Allocator, typename Iterator, typename Sentinel>
+  void assign(std::basic_string<CharT, Traits, Allocator>& str, Iterator first, Sentinel last) {
+    str.assign(first, last);
+  }
+
+  template <typename CharT, typename Traits, typename Allocator>
+  void append(std::basic_string<CharT, Traits, Allocator>& str, CharT ch) {
+    str.push_back(ch);
+  }
+
+  template <typename CharT, typename Traits, typename Allocator>
+  void clear(std::basic_string<CharT, Traits, Allocator>& str) BOOST_TOKENIZER_NOEXCEPT {
+    str.clear();
+  }
+
+  template <typename CharT, typename Traits, typename Iterator, typename Sentinel>
+  void assign(boost::basic_string_view<CharT, Traits>& sv, Iterator first, Sentinel last) BOOST_TOKENIZER_NOEXCEPT {
+    boost::basic_string_view<CharT, Traits>(
+      boost::addressof(*first), boost::distance(first, last)
+    ).swap(sv);
+  }
+
+  template <typename CharT, typename Traits>
+  void clear(boost::basic_string_view<CharT, Traits>& sv) BOOST_TOKENIZER_NOEXCEPT {
+    sv.clear();
+  }
+
+#if !defined(BOOST_NO_CXX17_HDR_STRING_VIEW)
+  template <typename CharT, typename Traits, typename Iterator, typename Sentinel>
+  void assign(std::basic_string_view<CharT, Traits>& sv, Iterator first, Sentinel last) BOOST_TOKENIZER_NOEXCEPT {
+    sv = std::basic_string_view<CharT, Traits>(
+      std::addressof(*first), std::distance(first, last)
+    );
+  }
+
+  template <typename CharT, typename Traits>
+  void clear(std::basic_string_view<CharT, Traits>& sv) BOOST_TOKENIZER_NOEXCEPT {
+    sv = std::basic_string_view<CharT, Traits>();
+  }
+#endif
+  } // namespace tokenizer_detail
+
+  // The out of the box GCC 2.95 on cygwin does not have a char_traits class.
+  // MSVC does not like the following typename
   template <class Char,
     class Traits = BOOST_DEDUCED_TYPENAME std::basic_string<Char>::traits_type >
   class escaped_list_separator {
-
   private:
     typedef std::basic_string<Char,Traits> string_type;
-    struct char_eq {
-      Char e_;
-      char_eq(Char e):e_(e) { }
-      bool operator()(Char c) {
-        return Traits::eq(e_,c);
-      }
-    };
+
     string_type  escape_;
     string_type  c_;
     string_type  quote_;
     bool last_;
 
-    bool is_escape(Char e) {
-      char_eq f(e);
-      return std::find_if(escape_.begin(),escape_.end(),f)!=escape_.end();
+    bool is_escape(Char e) const BOOST_TOKENIZER_NOEXCEPT {
+      return escape_.find(e) != string_type::npos;
     }
-    bool is_c(Char e) {
-      char_eq f(e);
-      return std::find_if(c_.begin(),c_.end(),f)!=c_.end();
+    bool is_c(Char e) const BOOST_TOKENIZER_NOEXCEPT {
+      return c_.find(e) != string_type::npos;
     }
-    bool is_quote(Char e) {
-      char_eq f(e);
-      return std::find_if(quote_.begin(),quote_.end(),f)!=quote_.end();
+    bool is_quote(Char e) const BOOST_TOKENIZER_NOEXCEPT {
+      return quote_.find(e) != string_type::npos;
     }
     template <typename iterator, typename Token>
     void do_escape(iterator& next,iterator end,Token& tok) {
+      using namespace tokenizer_detail;
+
       if (++next == end)
         BOOST_THROW_EXCEPTION(escaped_list_error("cannot end with escape"));
       if (Traits::eq(*next,'n')) {
-        tok+='\n';
+        append(tok, '\n');
         return;
       }
       else if (is_quote(*next)) {
-        tok+=*next;
+        append(tok, *next);
         return;
       }
       else if (is_c(*next)) {
-        tok+=*next;
+        append(tok, *next);
         return;
       }
       else if (is_escape(*next)) {
-        tok+=*next;
+        append(tok, *next);
         return;
       }
       else
@@ -159,12 +270,14 @@ namespace boost{
     escaped_list_separator(string_type e, string_type c, string_type q)
       : escape_(boost::move(e)), c_(boost::move(c)), quote_(boost::move(q)), last_(false) { }
 
-    void reset() {last_=false;}
+    void reset() BOOST_TOKENIZER_NOEXCEPT { last_ = false; }
 
     template <typename InputIterator, typename Token>
     bool operator()(InputIterator& next,InputIterator end,Token& tok) {
+      using namespace tokenizer_detail;
+
       bool bInQuote = false;
-      tok = Token();
+      clear(tok);
 
       if (next == end) {
         if (last_) {
@@ -177,7 +290,7 @@ namespace boost{
       last_ = false;
       for (;next != end;++next) {
         if (is_escape(*next)) {
-          do_escape(next,end,tok);
+          do_escape(next, end, tok);
         }
         else if (is_c(*next)) {
           if (!bInQuote) {
@@ -188,155 +301,20 @@ namespace boost{
             last_ = true;
             return true;
           }
-          else tok+=*next;
+          else {
+            append(tok, *next);
+          }
         }
         else if (is_quote(*next)) {
           bInQuote=!bInQuote;
         }
         else {
-          tok += *next;
+          append(tok, *next);
         }
       }
       return true;
     }
   };
-
-  //===========================================================================
-  // The classes here are used by offset_separator and char_separator to implement
-  // faster assigning of tokens using assign instead of +=
-
-  namespace tokenizer_detail {
-  //===========================================================================
-  // Tokenizer was broken for wide character separators, at least on Windows, since
-  // CRT functions isspace etc only expect values in [0, 0xFF]. Debug build asserts
-  // if higher values are passed in. The traits extension class should take care of this.
-  // Assuming that the conditional will always get optimized out in the function
-  // implementations, argument types are not a problem since both forms of character classifiers
-  // expect an int.
-
-#if !defined(BOOST_NO_CWCTYPE)
-  template<typename traits, int N>
-  struct traits_extension_details : public traits {
-    typedef typename traits::char_type char_type;
-    static bool isspace(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
-    {
-       return std::iswspace(c) != 0;
-    }
-    static bool ispunct(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
-    {
-       return std::iswpunct(c) != 0;
-    }
-  };
-
-  template<typename traits>
-  struct traits_extension_details<traits, 1> : public traits {
-    typedef typename traits::char_type char_type;
-    static bool isspace(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
-    {
-       return std::isspace(c) != 0;
-    }
-    static bool ispunct(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
-    {
-       return std::ispunct(c) != 0;
-    }
-  };
-#endif
-
-
-  // In case there is no cwctype header, we implement the checks manually.
-  // We make use of the fact that the tested categories should fit in ASCII.
-  template<typename traits>
-  struct traits_extension : public traits {
-    typedef typename traits::char_type char_type;
-    static bool isspace(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
-    {
-#if !defined(BOOST_NO_CWCTYPE)
-      return traits_extension_details<traits, sizeof(char_type)>::isspace(c);
-#else
-      return static_cast< unsigned >(c) <= 255 && std::isspace(c) != 0;
-#endif
-    }
-
-    static bool ispunct(char_type c) BOOST_NOEXCEPT_OR_NOTHROW
-    {
-#if !defined(BOOST_NO_CWCTYPE)
-      return traits_extension_details<traits, sizeof(char_type)>::ispunct(c);
-#else
-      return static_cast< unsigned >(c) <= 255 && std::ispunct(c) != 0;
-#endif
-    }
-  };
-
-  // The assign_or_plus_equal struct contains functions that implement
-  // assign, +=, and clearing based on the iterator type.  The
-  // generic case does nothing for plus_equal and clearing, while
-  // passing through the call for assign.
-  //
-  // When an input iterator is being used, the situation is reversed.
-  // The assign method does nothing, plus_equal invokes operator +=,
-  // and the clearing method sets the supplied token to the default
-  // token constructor's result.
-  //
-
-  template<class IteratorTag>
-  struct assign_or_plus_equal {
-    template<class Iterator, class Token>
-    static void assign(Iterator b, Iterator e, Token &t) {
-      t.assign(b, e);
-    }
-
-    template<class Token, class Value>
-    static void plus_equal(Token &, const Value &) BOOST_NOEXCEPT_OR_NOTHROW { }
-
-    // If we are doing an assign, there is no need for the
-    // the clear.
-    //
-    template<class Token>
-    static void clear(Token &) BOOST_NOEXCEPT_OR_NOTHROW { }
-  };
-
-  template <>
-  struct assign_or_plus_equal<std::input_iterator_tag> {
-    template<class Iterator, class Token>
-    static void assign(Iterator , Iterator , Token &) BOOST_NOEXCEPT_OR_NOTHROW { }
-    template<class Token, class Value>
-    static void plus_equal(Token &t, const Value &v) {
-      t += v;
-    }
-    template<class Token>
-    static void clear(Token &t) {
-      t = Token();
-    }
-  };
-
-
-  template<class Iterator>
-  struct pointer_iterator_category{
-    typedef std::random_access_iterator_tag type;
-  };
-
-
-  template<class Iterator>
-  struct class_iterator_category{
-    typedef typename Iterator::iterator_category type;
-  };
-
-
-
-  // This portably gets the iterator_tag without partial template specialization
-  template<class Iterator>
-    struct get_iterator_category{
-    typedef typename mpl::if_<is_pointer<Iterator>,
-      pointer_iterator_category<Iterator>,
-      class_iterator_category<Iterator>
-    >::type cat;
-
-    typedef typename cat::type iterator_category;
-  };
-
-
-  } // namespace tokenizer_detail
-
 
   //===========================================================================
   // The offset_separator class, which is a model of TokenizerFunction.
@@ -362,22 +340,18 @@ namespace boost{
       : offsets_(1,1), current_offset_(0),
         wrap_offsets_(true), return_partial_last_(true) { }
 
-    void reset() {
+    void reset() BOOST_TOKENIZER_NOEXCEPT {
       current_offset_ = 0;
     }
 
     template <typename InputIterator, typename Token>
     bool operator()(InputIterator& next, InputIterator end, Token& tok)
     {
-      typedef tokenizer_detail::assign_or_plus_equal<
-        BOOST_DEDUCED_TYPENAME tokenizer_detail::get_iterator_category<
-          InputIterator
-        >::iterator_category
-      > assigner;
+      using namespace tokenizer_detail;
 
       BOOST_ASSERT(!offsets_.empty());
 
-      assigner::clear(tok);
+      clear(tok);
       InputIterator start(next);
 
       if (next == end)
@@ -395,9 +369,9 @@ namespace boost{
       int i = 0;
       for (; i < c; ++i) {
         if (next == end)break;
-        assigner::plus_equal(tok,*next++);
+        ++next;
       }
-      assigner::assign(start,next,tok);
+      assign(tok, start, next);
 
       if (!return_partial_last_)
         if (i < (c-1) )
@@ -453,18 +427,14 @@ namespace boost{
         m_empty_tokens(drop_empty_tokens),
         m_output_done(false) { }
 
-    void reset() { }
+    void reset() BOOST_TOKENIZER_NOEXCEPT { }
 
     template <typename InputIterator, typename Token>
     bool operator()(InputIterator& next, InputIterator end, Token& tok)
     {
-      typedef tokenizer_detail::assign_or_plus_equal<
-        BOOST_DEDUCED_TYPENAME tokenizer_detail::get_iterator_category<
-          InputIterator
-        >::iterator_category
-      > assigner;
+      using namespace tokenizer_detail;
 
-      assigner::clear(tok);
+      clear(tok);
 
       // skip past all dropped_delims
       if (m_empty_tokens == drop_empty_tokens)
@@ -474,40 +444,37 @@ namespace boost{
       InputIterator start(next);
 
       if (m_empty_tokens == drop_empty_tokens) {
-
-        if (next == end)
+        if (next == end) {
           return false;
-
+        }
 
         // if we are on a kept_delims move past it and stop
         if (is_kept(*next)) {
-          assigner::plus_equal(tok,*next);
           ++next;
-        } else
+        } else {
           // append all the non delim characters
-          for (; next != end && !is_dropped(*next) && !is_kept(*next); ++next)
-            assigner::plus_equal(tok,*next);
+          while (next != end && !is_dropped(*next) && !is_kept(*next)) {
+            ++next;
+          }
+        }
       }
       else { // m_empty_tokens == keep_empty_tokens
-
         // Handle empty token at the end
-        if (next == end)
-        {
-          if (m_output_done == false)
-          {
+        if (next == end) {
+          if (m_output_done == false) {
             m_output_done = true;
-            assigner::assign(start,next,tok);
+            assign(tok, start, next);
             return true;
           }
-          else
+          else {
             return false;
+          }
         }
 
         if (is_kept(*next)) {
-          if (m_output_done == false)
+          if (m_output_done == false) {
             m_output_done = true;
-          else {
-            assigner::plus_equal(tok,*next);
+          } else {
             ++next;
             m_output_done = false;
           }
@@ -516,14 +483,16 @@ namespace boost{
           m_output_done = true;
         }
         else {
-          if (is_dropped(*next))
-            start=++next;
-          for (; next != end && !is_dropped(*next) && !is_kept(*next); ++next)
-            assigner::plus_equal(tok,*next);
+          if (is_dropped(*next)) {
+            start = ++next;
+          }
+          while (next != end && !is_dropped(*next) && !is_kept(*next)) {
+            ++next;
+          }
           m_output_done = true;
         }
       }
-      assigner::assign(start,next,tok);
+      assign(tok, start, next);
       return true;
     }
 
@@ -535,7 +504,7 @@ namespace boost{
     empty_token_policy m_empty_tokens;
     bool m_output_done;
 
-    bool is_kept(Char E) const BOOST_NOEXCEPT_OR_NOTHROW
+    bool is_kept(Char E) const BOOST_TOKENIZER_NOEXCEPT
     {
       if (m_kept_delims.length())
         return m_kept_delims.find(E) != string_type::npos;
@@ -544,7 +513,7 @@ namespace boost{
       } else
         return false;
     }
-    bool is_dropped(Char E) const BOOST_NOEXCEPT_OR_NOTHROW
+    bool is_dropped(Char E) const BOOST_TOKENIZER_NOEXCEPT
     {
       if (m_dropped_delims.length())
         return m_dropped_delims.find(E) != string_type::npos;
@@ -579,7 +548,7 @@ namespace boost{
     bool no_ispunct_;
     bool no_isspace_;
 
-    bool is_ret(Char E)const
+    bool is_ret(Char E) const BOOST_TOKENIZER_NOEXCEPT
     {
       if (returnable_.length())
         return  returnable_.find(E) != string_type::npos;
@@ -591,7 +560,7 @@ namespace boost{
         }
       }
     }
-    bool is_nonret(Char E)const
+    bool is_nonret(Char E) const BOOST_TOKENIZER_NOEXCEPT
     {
       if (nonreturnable_.length())
         return  nonreturnable_.find(E) != string_type::npos;
@@ -613,40 +582,42 @@ namespace boost{
         return_delims_(return_delims), no_ispunct_(returnable!=0),
         no_isspace_(nonreturnable!=0) { }
 
-    void reset() { }
+    void reset() BOOST_TOKENIZER_NOEXCEPT { }
 
   public:
 
-     template <typename InputIterator, typename Token>
-     bool operator()(InputIterator& next, InputIterator end,Token& tok) {
-     tok = Token();
+    template <typename InputIterator, typename Token>
+    bool operator()(InputIterator& next, InputIterator end,Token& tok) {
+      using namespace tokenizer_detail;
 
-     // skip past all nonreturnable delims
-     // skip past the returnable only if we are not returning delims
-     for (;next!=end && ( is_nonret(*next) || (is_ret(*next)
-       && !return_delims_ ) );++next) { }
+      clear(tok);
 
-     if (next == end) {
-       return false;
-     }
+      // skip past all nonreturnable delims
+      // skip past the returnable only if we are not returning delims
+      for (;next!=end && ( is_nonret(*next) || (is_ret(*next)
+         && !return_delims_ ) );++next) { }
 
-     // if we are to return delims and we are one a returnable one
-     // move past it and stop
-     if (is_ret(*next)) {
-       tok+=*next;
-       ++next;
-     }
-     else
-       // append all the non delim characters
-       for (;next!=end && !is_nonret(*next) && !is_ret(*next);++next)
-         tok+=*next;
+      if (next == end) {
+        return false;
+      }
 
+      const InputIterator start(next);
+      // if we are to return delims and we are one a returnable one
+      // move past it and stop
+      if (is_ret(*next)) {
+        ++next;
+      }
+      else {
+        // append all the non delim characters
+        while (next != end && !is_nonret(*next) && !is_ret(*next)) {
+          ++next;
+        }
+      }
+      assign(tok, start, next);
 
-     return true;
-   }
+      return true;
+    }
   };
-
-
 } //namespace boost
 
 #endif

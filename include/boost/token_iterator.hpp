@@ -22,7 +22,12 @@
 #include <boost/iterator/iterator_adaptor.hpp>
 #include <boost/iterator/minimum_category.hpp>
 #include <boost/token_functions.hpp>
+
+#if !defined(BOOST_NO_CXX11_HDR_TYPE_TRAITS)
+# include <type_traits>
+#endif
 #include <utility>
+
 
 namespace boost
 {
@@ -94,13 +99,9 @@ namespace boost
 
       TokenizerFunc tokenizer_function()const{return f_;}
 
-      Type current_token()const{return tok_;}
+      Type current_token() const BOOST_TOKENIZER_NOEXCEPT_EXPR(std::is_copy_constructible<Type>::value) { return tok_; }
 
-      bool at_end()const{return !valid_;}
-
-
-
-
+      bool at_end() const BOOST_TOKENIZER_NOEXCEPT { return !valid_; }
   };
     template <
         class TokenizerFunc = char_delimiters_separator<char>,
