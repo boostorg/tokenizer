@@ -56,11 +56,11 @@ namespace boost {
         
     template <typename Container>
     tokenizer(const Container& c)
-      : first_(c.begin()), last_(c.end()), f_() { }
+      : first_(std::begin(c)), last_(std::end(c)), f_() { }
     
     template <typename Container>
     tokenizer(const Container& c,const TokenizerFunc& f)
-      : first_(c.begin()), last_(c.end()), f_(f) { }
+      : first_(std::begin(c)), last_(std::end(c)), f_(f) { }
     
     void assign(Iterator first, Iterator last){
       first_ = first;
@@ -74,13 +74,13 @@ namespace boost {
     
     template <typename Container>
     void assign(const Container& c){
-      assign(c.begin(),c.end());
+      assign(std::begin(c), std::end(c));
     }
     
     
     template <typename Container>
     void assign(const Container& c, const TokenizerFunc& f){
-      assign(c.begin(),c.end(),f);
+      assign(std::begin(c), std::end(c), f);
     }
     
     iter begin() const { return iter(f_,first_,last_); }
