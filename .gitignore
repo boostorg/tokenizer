@@ -1,0 +1,11 @@
+*.exe
+*.obj
+*.ilk
+*.pdb
+*.gcno
+*.gcda
+*.html
+*.css
+*.swp
+*.swo
+.vscode
