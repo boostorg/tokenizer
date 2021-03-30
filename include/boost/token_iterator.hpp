@@ -68,7 +68,6 @@ namespace boost
       }
 
       void initialize(){
-          if(valid_) return;
           f_.reset();
           valid_ = (begin_ != end_)?
               f_(begin_,end_,tok_):false;
