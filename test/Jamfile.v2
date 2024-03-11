@@ -4,7 +4,7 @@
 
 import testing ;
 
-run examples.cpp ;
+run examples.cpp : : : <source>/boost/array//boost_array ;
 run simple_example_1.cpp ;
 run simple_example_2.cpp ;
 run simple_example_3.cpp ;
