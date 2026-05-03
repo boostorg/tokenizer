@@ -20,30 +20,33 @@
 
 #include <boost/assert.hpp>
 #include <boost/iterator/iterator_adaptor.hpp>
-#include <boost/iterator/minimum_category.hpp>
+#include <boost/iterator/iterator_categories.hpp>
+#include <boost/iterator/enable_if_convertible.hpp>
+#include <boost/iterator/min_category.hpp>
 #include <boost/token_functions.hpp>
 #include <utility>
+#include <string>
 
 namespace boost
 {
   template <class TokenizerFunc, class Iterator, class Type>
   class token_iterator
-      : public iterator_facade<
+      : public iterators::iterator_facade<
             token_iterator<TokenizerFunc, Iterator, Type>
           , Type
-          , typename iterators::minimum_category<
+          , typename iterators::min_category<
                 forward_traversal_tag
-              , typename iterator_traversal<Iterator>::type
+              , typename iterators::iterator_traversal<Iterator>::type
             >::type
           , const Type&
         >
   {
 
-#ifdef __DCC__ 
-      friend class boost::iterator_core_access; 
-#else 
+#ifdef __DCC__
+      friend class boost::iterators::iterator_core_access; 
+#else
       friend class iterator_core_access; 
-#endif  
+#endif
       TokenizerFunc f_;
       Iterator begin_;
       Iterator end_;
@@ -85,7 +88,7 @@ namespace boost
       template<class OtherIter>
       token_iterator(
             token_iterator<TokenizerFunc, OtherIter,Type> const& t
-            , typename enable_if_convertible<OtherIter, Iterator>::type* = 0)
+            , typename iterators::enable_if_convertible<OtherIter, Iterator>::type* = 0)
             : f_(t.tokenizer_function()),begin_(t.base())
             ,end_(t.end()),valid_(!t.at_end()),tok_(t.current_token()) {}
 
